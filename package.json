@@ -1,0 +1,70 @@
+{
+  "name": "teneo-khoros-bot-connector",
+  "version": "1.0.0",
+  "description": "Connects Teneo as a Bot with Khoros",
+  "displayName": "Teneo Khoros Bot Connector",
+  "author": "Peter Joles <peter-joles@artificial-solutions.com> (https://www.linkedin.com/in/peterjoles/)",
+  "main": "./dist-server/bin/www.js",
+  "type": "module",
+  "engines": {
+    "node": ">= 12.13.0",
+    "npm": ">= 6.12.0"
+  },
+  "scripts": {
+    "start": "npm run prod",
+    "build": "npm-run-all clean transpile",
+    "server": "node ./dist-server/bin/www",
+    "dev": "cross-env NODE_ENV=development nodemon --exec babel-node ./server/bin/www.js",
+    "dev:transpile": "cross-env NODE_ENV=development npm-run-all build server",
+    "dev:watch": "nodemon",
+    "prod": "cross-env NODE_ENV=production npm-run-all build server",
+    "transpile": "babel ./server --out-dir dist-server",
+    "clean": "rimraf dist-server",
+    "test": "jest"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@artificialsolutions/tie-api-client": "^1.3.4",
+    "@babel/cli": "^7.8.4",
+    "@babel/core": "^7.8.4",
+    "@babel/preset-env": "^7.8.4",
+    "async-ratelimiter": "^1.2.7",
+    "body-parser": "^1.19.0",
+    "bottleneck": "^2.19.5",
+    "core-js": "^3.6.4",
+    "dotenv": "^8.2.0",
+    "express": "^4.17.1",
+    "ioredis": "^4.14.1",
+    "moment": "^2.24.0",
+    "nodemon": "^2.0.2",
+    "npm-run-all": "^4.1.5",
+    "r2": "^2.0.1",
+    "regenerator-runtime": "^0.13.3",
+    "rimraf": "^3.0.2",
+    "twit": "^2.2.11"
+  },
+  "devDependencies": {
+    "@babel/node": "^7.8.4",
+    "cross-env": "^7.0.0",
+    "jest": "^25.1.0"
+  },
+  "babel": {
+    "presets": [
+      "@babel/preset-env"
+    ]
+  },
+  "nodemonConfig": {
+    "exec": "npm run dev:transpile",
+    "watch": [
+      "server/*"
+    ],
+    "ignore": [
+      "**/__tests__/**",
+      "*.test.js",
+      "*.spec.js"
+    ]
+  },
+  "jest": {
+    "testEnvironment": "node"
+  }
+}

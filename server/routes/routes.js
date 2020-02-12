@@ -1,0 +1,720 @@
+"use strict";
+/**
+ * Teneo Connector to Khoros
+ * author: Peter Joles
+ * email: peter.joles@artificial-solutions.com
+ * Khoros Docs: https://developer.khoros.com/khoroscaredevdocs/reference#bot-api-3
+ */
+require("dotenv").config();
+import {
+  lithium,
+  limiterConfigPublicTwitter,
+  limiterConfigPrivateTwitter,
+  twitterConfig
+} from "../lib/config";
+import Bottleneck from "bottleneck";
+import { isEmpty } from "../lib/lib";
+import Redis from "ioredis";
+import TIE from "@artificialsolutions/tie-api-client";
+import moment from "moment";
+import Twit from "twit";
+const limiterPublic = new Bottleneck(limiterConfigPublicTwitter); // To help with Twitter rate limits
+const limiterPrivate = new Bottleneck(limiterConfigPrivateTwitter); // To help with Twitter rate limits
+const limiterKhoros = new Bottleneck(limiterKhoros); // queue Khoros API requests // 2 per second
+const redis = new Redis({
+  port: parseInt(process.env.REDIS_PORT), // Redis port
+  host: process.env.REDIS_HOST, // Redis host
+  family: 4, // 4 (IPv4) or 6 (IPv6)
+  password: process.env.REDIS_PASSWORD
+});
+
+const r2 = require("r2"); // http library
+const T = new Twit(twitterConfig);
+
+const logTeneoResponse = teneoResponse => {
+  console.log("Teneo Response:", teneoResponse);
+  return teneoResponse;
+};
+
+/**
+ * Lithium only gives us the twitter post id. We need to get the message text via API call directly to twitter.
+ * https://tinyurl.com/ungrfn8
+ */
+const getPublicTweetMessage = async lithiumEvent => {
+  const tweetId = lithiumEvent.coordinate.messageId;
+  const params = {
+    id: tweetId
+  };
+  T.get(`statuses/show`, params, (err, data, response) => {
+    if (err) {
+      console.log(`Could not find tweetId ${tweetId} publically`);
+      return null;
+    } else {
+      console.log(`SUCCESS:Twitter:GET:statuses/show`, tweetId, data.text);
+      return data.text; // lots of information available https://developer.twitter.com/en/docs/tweets/post-and-engage/api-reference/get-statuses-show-id
+    }
+  });
+};
+
+const getPrivateTweetMessage = async lithiumEvent => {
+  console.log(`ERROR:Twitter:GET:statuses/show`, tweetId);
+  T.get(`direct_messages/events/show`, params, (err, data, response) => {
+    // https://developer.twitter.com/en/docs/direct-messages/sending-and-receiving/api-reference/get-event
+    if (err) {
+      console.log(`ERROR:Twitter:GET:direct_messages/events/show`, tweetId);
+      // TODO: Think about what to do here
+      return null;
+    } else {
+      console.log(
+        `SUCCESS:Twitter:GET:direct_messages/events/show`,
+        tweetId,
+        data.event.message_create.message_data.text
+      );
+      return data.event.message_create.message_data.text;
+    }
+  });
+};
+
+const session = {
+  deleteSessionId: khorosId => {
+    redis.del(khorosId).then(() => {
+      console.log("REDIS:DEL[SESSION] Deleted cache for key: ${khorosId}");
+    });
+  },
+  findSessionId: async khorosId => {
+    return new Promise((resolve, reject) => {
+      redis
+        .get(khorosId)
+        .then(teneoSesisonId => {
+          console.log("REDIS:GET[SESSION] Teneo Session ID: ", teneoSesisonId);
+          resolve(teneoSesisonId);
+        })
+        .catch(err => {
+          console.log("REDIS:GET[SESSION]", err);
+          resolve(null);
+        });
+    });
+  },
+  cacheSessionId: (khorosPostId, teneoSessionId) => {
+    let minutes = 20;
+    redis.set(khorosPostId, teneoSessionId, "EX", minutes * 60);
+    console.log(
+      `REDIS:SET[SESSION] Caching Session Info for [${minutes}min]: `,
+      khorosPostId,
+      teneoSessionId
+    );
+  }
+};
+
+const token = {
+  registerBot: async () => {
+    return new Promise(async (resolve, reject) => {
+      let accessToken = await token.getAccessToken();
+      let responses = [];
+      if (accessToken) {
+        console.log(`Acess Token`, accessToken);
+        lithium.bot.networks.forEach(async network => {
+          const registrationPayload = {
+            companyKey: lithium.bot.companyKey,
+            platform: "LITHIUM",
+            networkKey: network.key,
+            externalId: network.externalId,
+            appId: lithium.appId,
+            name: lithium.bot.name,
+            avatarUrl: lithium.bot.avatarUrl,
+            contact: { email: lithium.bot.supportEmail },
+            mode: "LIVE", // or MAINTENANCE
+            publicFilter: {
+              includeTargeted: network.includeTargeted
+            },
+            callbackUrl: lithium.bot.callbackUrl,
+            credentials: lithium.bot.callbackCredentials
+          };
+
+          const auth = `Bearer ${accessToken.token}`;
+          const payload = {
+            Authorization: auth,
+            json: registrationPayload
+          };
+          try {
+            let responseJson = await r2.post(lithium.registrationUrl, {
+              payload
+            }).json;
+            responses.push(responseJson);
+          } catch (e) {
+            console.error(
+              `Bot Registration: ${registrationPayload.name}`,
+              e.message
+            );
+          }
+        });
+        resolve(responses);
+      } else {
+        resolve(responses);
+      }
+    });
+  },
+  /**
+   * Requests a new access token and caches new token in Redis.
+   * Returns new token
+   */
+  requestNewAccessToken: async () => {
+    const auth =
+      "Basic " +
+      Buffer.from(
+        lithium.credentials.username + ":" + lithium.credentials.password
+      ).toString("base64");
+    const headers = {
+      Authorization: auth
+    };
+    try {
+      let resp = await r2.post(lithium.tokenUrl, { headers }).json;
+      // let resp = {
+      //   status: "success",
+      //   data: {
+      //     token: "<token>",
+      //     expiresAtMillis: "<epochMillis>"
+      //   }
+      // };
+      if (resp && resp.status === "success") {
+        this.cacheAccessToken(resp);
+        return resp.data;
+      } else {
+        return null;
+      }
+    } catch (e) {
+      console.error(`Could not requestNewAccessToken`, e.message);
+      return null;
+    }
+  },
+  /**
+   * Requests refreshed token and caches the result in Redis.
+   * Returns the new token
+   */
+  refreshAccessToken: async token => {
+    // refresh
+    const auth = `Bearer ${token}`;
+    const headers = {
+      Authorization: auth
+    };
+    try {
+      let resp = await r2.put(lithium.refreshTokenUrl, { headers }).json;
+
+      // cache
+      if (resp && resp.status === "success") {
+        this.cacheAccessToken(resp);
+        // return
+        return resp.data;
+      } else {
+        return null;
+      }
+    } catch (error) {
+      console.error(`refreshAccessToken`, error);
+      return null;
+    }
+  },
+  /**
+   * Either returns the token or null
+   */
+  getCachedAccessToken: async () => {
+    return new Promise((resolve, reject) => {
+      redis
+        .get(lithium.KHOROS_ACCESS_TOKEN_CACHE_KEY)
+        .then(cachedAccessTokenResponse => {
+          console.log(
+            "REDIS:GET[KHOROS_ACCESS_TOKEN] ",
+            cachedAccessTokenResponse
+          );
+          resolve(cachedAccessTokenResponse);
+        })
+        .catch(err => {
+          console.log(`No Cached Access Token in Redis`, err);
+          resolve(null);
+        });
+    });
+  },
+  /**
+   * Caches the Lithium token until it needs refreshing
+   */
+  cacheAccessToken: responseToken => {
+    let expires = moment(responseToken.data.expiresAtMillis);
+    let now = moment();
+    let secondsUntilExpiry = expires.dif(now, "seconds");
+
+    redis
+      .set(
+        lithium.KHOROS_ACCESS_TOKEN_CACHE_KEY,
+        responseToken.data,
+        "EX",
+        secondsUntilExpiry
+      )
+      .then(() => {
+        console.log(
+          `REDIS:SET:ACCESS_TOKEN`,
+          responseToken.data,
+          `For ${secondsUntilExpiry} secs`
+        );
+      });
+  },
+  /**
+   * Looks in cache first, if not found requests a new token.
+   * If found, checks if a week has passed and requests a refresh to token.
+   * check cache, refresh if needed or request new token
+   */
+  getAccessToken: async () => {
+    let accessToken = await token.getCachedAccessToken();
+    if (accessToken) {
+      // found an existing access token
+      let expires = moment(accessToken.expiresAtMillis);
+      let now = moment();
+      let daysUntilExpiry = expires.dif(now, "days");
+      if (daysUntilExpiry < 83) {
+        // request refresh to existing token - a week has passed
+        accessToken = await this.refreshAccessToken(accessToken.token);
+      }
+      return accessToken.token;
+    } else {
+      // no access token found in cache - ask for a new token
+      let accessToken = await token.requestNewAccessToken();
+      return accessToken ? accessToken.token : null;
+    }
+  }
+};
+
+const sortBy = field => {
+  return function(a, b) {
+    return (a[field] > b[field]) - (a[field] < b[field]);
+  };
+};
+
+const parseTasksFromTeneoResponse = tasks => {
+  let tempTasks = tasks.split("||");
+  let allTasks = [
+    { order: 10, name: "image", postsAnAnswer: true, shouldPostAnswer: true },
+    { order: 20, name: "video", postsAnAnswer: true, shouldPostAnswer: true },
+    {
+      order: 30,
+      name: "richimage",
+      postsAnAnswer: true,
+      shouldPostAnswer: true
+    },
+    {
+      order: 40,
+      name: "richvideo",
+      postsAnAnswer: true,
+      shouldPostAnswer: true
+    },
+    { order: 50, name: "tags", postsAnAnswer: false, shouldPostAnswer: true },
+    { order: 60, name: "note", postsAnAnswer: false, shouldPostAnswer: true },
+    {
+      order: 70,
+      name: "priortiy",
+      postsAnAnswer: false,
+      shouldPostAnswer: false
+    },
+    {
+      order: 80,
+      name: "workqueue",
+      postsAnAnswer: false,
+      shouldPostAnswer: false
+    },
+    {
+      order: 90,
+      name: "resolve",
+      postsAnAnswer: false,
+      shouldPostAnswer: true
+    },
+    {
+      order: 95,
+      name: "handover",
+      postsAnAnswer: false,
+      shouldPostAnswer: false
+    }
+  ];
+
+  tempTasks.forEach(task => {
+    let taskInstructions = task.split("|");
+    let finalTaskInstructions = [];
+    taskInstructions.forEach(instruction => {
+      let finalInstruction = instruction.replace(/  |\r\n|\n|\r/gm, "");
+      finalInstruction = instruction.trim();
+      if (finalInstruction !== "") {
+        finalTaskInstructions.push(finalInstruction);
+      }
+    });
+    if (finalTaskInstructions.length > 0) {
+      const foundIndex = allTasks.findIndex(
+        task => task.name === finalTaskInstructions[0].toLowerCase()
+      );
+      allTasks[foundIndex].info = finalTaskInstructions;
+    }
+  });
+
+  allTasks.sort(sortBy("order"));
+  allTasks = allTasks.filter(task => "info" in task);
+  return allTasks;
+};
+
+/** Teneo has already been called - let's focus on what needs to be done now */
+const handleTeneoResponse = async (lithiumEvent, teneoResponse) => {
+  const khorosPostId = lithiumEvent.author.id; // or something that is session specific
+  session.cacheSessionId(khorosPostId, teneoResponse.sessionId);
+  let extraInfo = teneoResponse.output.parameters;
+
+  let simplePayload = lithium.routes.textReply(
+    lithiumEvent,
+    teneoResponse.output.text
+  );
+
+  let hasSendTeneoAnswerText = false;
+
+  if (isEmpty(extraInfo)) {
+    console.log(`Queueing task "textReply" to Khoros:`, simplePayload);
+    limiterKhoros
+      .schedule(() => doKhorosBotApiCall(simplePayload))
+      .then(khorosResp => {
+        console.log(`Response task "textReply" from Khoros:`, khorosResp);
+      });
+  } else if (extraInfo.khoros) {
+    // image | imageUrl ||
+    // video | videoUrlMp4 ||
+    // handover | commentText ||
+    // resolve | commentText||
+    // tags | 123,234,555 ||
+    // note | noteText ||
+    // priortiy | 0 ||
+    // workQueue | workQueueIdName | comment ||
+    // richImage | imageLinkUrl | imageTitle | imageUrl | mimeTypeOfImage ||
+    // richVideo | videoLinkUrl | videoTitle | videoUrl | mimeTypeOfVideo ||
+    try {
+      let taskList = parseTasksFromTeneoResponse(extraInfo.khoros);
+
+      // let's adhere to the rules
+      let tasksThatPostAnswers = taskList.filter(task => task.postsAnAnswer);
+      let tasksThatShouldNotPostAnswers = taskList.filter(
+        task => !task.shouldPostAnswer
+      );
+
+      let aTaskThatPostAnAnswer = tasksThatPostAnswers.find(
+        task => task.postsAnAnswer
+      );
+
+      let metaTasks = taskList.filter(
+        task => !task.postsAnAnswer && task.shouldPostAnswer
+      );
+
+      // only send a simple text reply when we are allowed to
+      if (
+        tasksThatPostAnswers.length === 0 &&
+        tasksThatShouldNotPostAnswers === 0
+      ) {
+        console.log(`Queueing task "textReply" to Khoros:`, simplePayload);
+        limiterKhoros
+          .schedule(() => doKhorosBotApiCall(simplePayload))
+          .then(khorosResp => {
+            console.log(`Response task "textReply" from Khoros:`, khorosResp);
+          });
+      }
+      if (tasksThatShouldNotPostAnswers.length > 0) {
+        taskList = tasksThatShouldNotPostAnswers; // ignore others so that we don't post when we shouldn't
+      } else {
+        taskList = [aTaskThatPostAnAnswer].concat(metaTasks); // combine arrays
+        taskList.sort(sortBy("order"));
+      }
+
+      console.log("Final Task List", taskList);
+
+      taskList.forEach(async task => {
+        let taskName = task.name.toLowerCase();
+        let jsonPayload = {};
+        switch (taskName) {
+          case "image":
+            if (task.info.length > 1) {
+              jsonPayload = lithium.routes.imageReply(
+                lithiumEvent,
+                teneoResponse.output.text,
+                task.info[1]
+              );
+            }
+            break;
+          case "video":
+            if (task.info.length > 1) {
+              jsonPayload = lithium.routes.videoReply(
+                lithiumEvent,
+                teneoResponse.output.text,
+                task.info[1]
+              );
+            }
+            break;
+          case "handover":
+            jsonPayload = lithium.routes.handover(
+              lithiumEvent,
+              task.info.length > 1 ? task.info[1] : ""
+            );
+            break;
+          case "resolve":
+            if (task.info.length > 1) {
+              jsonPayload = lithium.routes.resolve(lithiumEvent, task.info[1]);
+            }
+            break;
+          case "tags":
+            if (task.info.length > 1) {
+              jsonPayload = lithium.routes.addTags(
+                lithiumEvent,
+                task.info[1].split(/\s*,\s*/).map(Number)
+              );
+            }
+            break;
+          case "note":
+            if (task.info.length > 1) {
+              jsonPayload = lithium.routes.addNote(lithiumEvent, task.info[1]);
+            }
+            break;
+          case "priortiy":
+            if (task.info.length > 1) {
+              jsonPayload = lithium.routes.changePriority(
+                lithiumEvent,
+                parseInt(task.info[1])
+              );
+            }
+            break;
+          case "workqueue":
+            // TODO: Test this. conversationDisplayId?
+            if (task.info.length > 2) {
+              jsonPayload = lithium.routes.changeWorkQueue(
+                lithiumEvent,
+                task.info[1],
+                "conversationDisplayId",
+                task.info[2]
+              );
+            }
+            break;
+          case "richimage":
+            if (task.info.length > 4) {
+              jsonPayload = lithium.routes.richImageReply(
+                lithiumEvent,
+                teneoResponse.output.text,
+                task.info[1],
+                task.info[2],
+                task.info[3],
+                task.info[4]
+              );
+            }
+            break;
+          case "richvideo":
+            if (task.info.length === 5) {
+              jsonPayload = lithium.routes.richVideoReply(
+                lithiumEvent,
+                teneoResponse.output.text,
+                task.info[1],
+                task.info[2],
+                task.info[3],
+                task.info[4]
+              );
+            }
+            break;
+          default:
+            break;
+        }
+        if (!isEmpty(jsonPayload)) {
+          console.log(`Queueing task "${taskName}" to Khoros:`, jsonPayload);
+          limiterKhoros
+            .schedule(() => doKhorosBotApiCall(jsonPayload))
+            .then(khorosBotApiCallResponse => {
+              console.log(
+                `Response task "${taskName}" from Khoros:`,
+                khorosBotApiCallResponse
+              );
+            });
+        }
+      });
+    } catch (err) {
+      console.error(
+        "There was a problem parsing Khoros tasks from Teneo",
+        err.message
+      );
+    }
+  }
+
+  //   TIE.close(teneoEngineUrl, sessionId);
+  //   session.deleteSessionId(khorosPostId);
+};
+
+const teneoProcess = async (lithiumEvent, postText = null) => {
+  postText = postText ? postText : lithiumEvent.text;
+
+  const teneoSessionId = await session.findSessionId(lithiumEvent.author.id);
+  TIE.sendInput(lithium.bot.tieUrl, teneoSessionId, {
+    text: postText,
+    channel: "khoros",
+    socialMediaChannel:
+      "twitter-private/twitter-public/facebook-private/facebook-public"
+  })
+    .then(logTeneoResponse)
+    .then(teneoResponse => {
+      handleTeneoResponse(lithiumEvent, teneoResponse);
+    })
+    .catch(err => {
+      console.error("Teneo ERROR:", err);
+      // TODO: Think about how to handle this
+    });
+};
+
+/**
+ * Check if Twitter or Facebook
+ * @param {*} lithiumEvent is the event delivered by Lithium
+ */
+const scheduleEvent = async lithiumEvent => {
+  // TODO: Investigate how to see if event is from Twitter and if it's public vs. private
+  if (lithiumEvent.text) {
+    // assume facebook
+    teneoProcess(lithiumEvent); // no need to scheule anything
+  } else {
+    // more lax rate limit on public tweets - start here
+    limiterPublic
+      .schedule(() => getPublicTweetMessage(lithiumEvent))
+      .then(postText => {
+        if (postText) {
+          console.log(`Public Tweet Text`, postText);
+          teneoProcess(lithiumEvent, postText);
+        } else {
+          // Not a public tweet
+          limiterPrivate
+            .schedule(() => getPrivateTweetMessage(lithiumEvent))
+            .then(dmText => {
+              if (dmText) {
+                console.log(`DM Tweet Text`, dmText);
+                teneoProcess(lithiumEvent, dmText);
+              } else {
+                console.log(
+                  `WARNING: Neither Public or Private Tweet could be found for: `,
+                  lithiumEvent
+                );
+              }
+            });
+        }
+      });
+  }
+};
+
+/**
+ * This function make the call to the botAPI
+ * @param {*} jsonPayload is the payload to deliver to Lithium
+ */
+const doKhorosBotApiCall = async instructions => {
+  /**
+   * To ensure that emojis are delivered correctly, add charset=utf-8 to your header when using the /respondendpoint.
+   * Content-Type: application/json; charset=utf-8
+   */
+
+  const accessToken = await token.getAccessToken();
+  if (accessToken) {
+    try {
+      const options = {
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          Authorization: `Bearer ${accessToken}`
+        },
+        method: instructions.method,
+        json: instructions.payload
+      };
+      const response = await r2(
+        `${lithium.baseApiUrl}${instructions.path}`,
+        options
+      ).response;
+      return response;
+    } catch (error) {
+      console.error("Khoros ERROR", error);
+    }
+  } else {
+    console.error(`doKhorosBotApiCall:accessToken:null`);
+  }
+};
+
+const sendHandover = lithiumEvent => {
+  console.log("Pass control to Khoros agent:", payload);
+  doKhorosBotApiCall(lithium.routes.handover(lithiumEvent, ""));
+};
+
+/**
+ * Decide up front if we should handle this event or not.
+ */
+const processLithiumEvent = async lithiumEvent => {
+  if (
+    lithiumEvent.type == "update" &&
+    lithiumEvent.operation == "AGENT_RESPONSE" &&
+    lithiumEvent.coordinate.scope == "PUBLIC"
+  ) {
+    sendHandover(lithiumEvent);
+  } else if (
+    lithiumEvent &&
+    lithiumEvent.owner.type === "bot" &&
+    lithiumEvent.owner.appId === lithium.appId
+  ) {
+    /**
+     * The bot receives all events even if it is not the owner. However, the bot can only
+     * send a message to the author if it is the owner. It can take all other actions.
+     * So ignore type = [update|agent]
+     */
+    // Only process events you want to process
+    if (lithiumEvent.type == "message") {
+      scheduleEvent(lithiumEvent);
+    } else {
+      //TODO: What? Ignore?
+    }
+  }
+};
+
+/** Register Bot will all networks [Twitter/Facebook] */
+const registerBot = () => {
+  return new Promise((resolve, reject) => {
+    token.registerBot().then(responses => {
+      resolve(responses);
+    });
+  });
+};
+
+/**
+ * Handles the event delivered by Lithium. The body of the "event"
+ *   delivered by the API Gateway is the event from Lithium.
+ */
+export const khorosInbound = (req, res) => {
+  // {
+  //   "author"      : { "id": "<authorId>" },
+  //   "coordinate"  : {
+  //     "botId"      : "<botId>",
+  //     "companyKey" : "<companyKey>",
+  //     "externalId" : "<externalId>",
+  //     "messageId"  : "<messageId>",
+  //     "networkKey" : "<networkKey>",
+  //     "scope"      : "<PUBLIC|PRIVATE><private|public>"
+  //   },
+  //   "owner"       : {
+  //     "appId" : "<appId>",
+  //     "type"  : "bot"
+  //   },
+  //   "publishedTS" : "<published epoch millis>",
+  //   "receivedTS"  : "<received epoch millis>",
+  //   "text"        : "Who created you?",
+  //   "type"        : "message"
+  // }
+  const lithiumEvent = req.body;
+  console.log("Khoros Event: ", lithiumEvent); //log the event
+  processLithiumEvent(lithiumEvent);
+  res.status(202).json({ message: "Teneo - Roger that", echo: lithiumEvent });
+};
+
+/**
+ * Gets a new access token and registers the Teneo Bot with Khoros.
+ * Registers for the following networks [twitter & facebook]
+ */
+export const khorosRegisterBot = (req, res) => {
+  registerBot()
+    .then(responses => {
+      res.status(200).json({
+        message: "Teneo - Results from register Teneo as Bot",
+        results: responses
+      });
+    })
+    .catch(err => console.error(`Registration Error:`, err.message));
+};

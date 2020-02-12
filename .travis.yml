@@ -1,0 +1,17 @@
+language: node_js
+node_js:
+  - "13.8"
+sudo: required
+services:
+  - docker
+before_script:
+  - npm install
+script:
+  # - npm test
+  - docker build -t teneo-khoros-webhook .
+after_success:
+  - docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
+  - docker tag teneo-khoros-webhook $DOCKER_USER/teneo-khoros-webhook:$TRAVIS_BUILD_NUMBER
+  - docker push $DOCKER_USER/teneo-khoros-webhook:$TRAVIS_BUILD_NUMBER
+  - docker tag teneo-khoros-webhook $DOCKER_USER/teneo-khoros-webhook:latest
+  - docker push $DOCKER_USER/teneo-khoros-webhook:latest
