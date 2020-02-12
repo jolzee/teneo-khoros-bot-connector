@@ -5,7 +5,6 @@
   "displayName": "Teneo Khoros Bot Connector",
   "author": "Peter Joles <peter-joles@artificial-solutions.com> (https://www.linkedin.com/in/peterjoles/)",
   "main": "./dist-server/bin/www.js",
-  "type": "module",
   "engines": {
     "node": ">= 12.13.0",
     "npm": ">= 6.12.0"

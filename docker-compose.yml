@@ -1,0 +1,12 @@
+version: "3"
+services:
+  teneo-khoros-webhook:
+    image: jolzee/teneo-khoros-webhook
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    links:
+      - redis
+  redis:
+    image: redis
