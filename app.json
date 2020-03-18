@@ -3,6 +3,11 @@
   "description": "Connects Teneo as a Bot with Khoros",
   "keywords": ["bot", "khoros", "Teneo", "twitter", "facebook", "nlp"],
   "repository": "https://github.com/jolzee/teneo-khoros-bot-connector",
+  "buildpacks": [
+    {
+      "url": "https://github.com/heroku/heroku-buildpack-nodejs"
+    }
+  ],
   "env": {
     "REDIS_HOST": {
       "description": "Redis is used to persist access tokens and for Teneo session management. Examples 192.168.1.12 or myredishost.com",
@@ -10,6 +15,7 @@
     },
     "REDIS_PORT": {
       "description": "Port exposed by your Redis server. Default port is 6379",
+      "value": 6379,
       "required": true
     },
     "REDIS_PASSWORD": {
@@ -33,19 +39,22 @@
       "required": true
     },
     "TENEO_CALLBACK_URL": {
-      "description": "The URL that should be registered with Khoros as the webhook for incomming posts. Something like 'https://host-where-this-is deployed.com:<possible-port>/'",
+      "description": "The URL that should be registered with Khoros as the webhook for incomming posts. Something like 'https://host-where-this-is-deployed.com:<possible-port>/'",
       "required": true
     },
     "KHOROS_BASE_API_URL": {
       "description": "The base URL for Khoros APIs - For example: https://api.app.lithium.com/bots/v3",
+      "value": "https://api.app.lithium.com/bots/v3",
       "required": true
     },
     "KHOROS_BASE_TOKEN_URL": {
-      "description": "https://southwestairdev.response.lithium.com/api/v2/tokens/khorosapi/ownerId/",
+      "description": "https://<KHOROS_COMPANY_KEY>.response.lithium.com/api/v2/tokens/khorosapi/ownerId/",
+      "value": "https://<KHOROS_COMPANY_KEY>.response.lithium.com/api/v2/tokens/khorosapi/ownerId/",
       "required": true
     },
     "KHOROS_ACCESS_TOKEN_CACHE_KEY": {
-      "description": "Unique key in Redis against which the Khoros token is stored and retrieved. For example: outKhorosBotAccessToken",
+      "description": "Unique key in Redis against which the Khoros token is stored and retrieved. For example: ourKhorosBotAccessToken",
+      "generator": "secret",
       "required": true
     },
     "KHOROS_CREDENTIALS_USERNAME": {
@@ -73,7 +82,7 @@
       "required": true
     },
     "KHOROS_NETWORK_TWITTER_AUTH_CONSUMER_KEY": {
-      "description": "m5kARw1sRDIJ9kZwpMG4E8qHk",
+      "description": "Twitter Auth Consumer Key",
       "required": true
     },
     "KHOROS_NETWORK_TWITTER_AUTH_CONSUMER_SECRET": {
@@ -81,7 +90,7 @@
       "required": true
     },
     "KHOROS_NETWORK_TWITTER_AUTH_ACCESS_TOKEN_KEY": {
-      "description": "1204895102101012481-aXEO09rUV4vtZPkwdwkUzpDEi10ArY",
+      "description": "Twitter Developer Auth Access Token Key",
       "required": true
     },
     "KHOROS_NETWORK_TWITTER_AUTH_ACCESS_TOKEN_SECRET": {
