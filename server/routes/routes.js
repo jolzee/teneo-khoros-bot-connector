@@ -609,30 +609,38 @@ const scheduleEvent = async lithiumEvent => {
     // assume facebook
     teneoProcess(lithiumEvent); // no need to scheule anything
   } else {
+    // very likely twitter
+    const twitterChannelName = generateChannelName(lithiumEvent);
     // more lax rate limit on public tweets - start here
-    limiterPublic
-      .schedule(() => getPublicTweetMessage(lithiumEvent))
-      .then(postText => {
-        if (postText) {
-          console.log(`Public Tweet Text`, postText);
-          teneoProcess(lithiumEvent, postText);
-        } else {
-          // Not a public tweet
-          limiterPrivate
-            .schedule(() => getPrivateTweetMessage(lithiumEvent))
-            .then(dmText => {
-              if (dmText) {
-                console.log(`DM Tweet Text`, dmText);
-                teneoProcess(lithiumEvent, dmText);
-              } else {
-                console.log(
-                  `WARNING: Neither Public or Private Tweet could be found for: `,
-                  lithiumEvent
-                );
-              }
-            });
-        }
-      });
+    if (twitterChannelName.includes("public")) {
+      limiterPublic
+        .schedule(() => getPublicTweetMessage(lithiumEvent))
+        .then(postText => {
+          if (postText) {
+            console.log(`Public Tweet Text`, postText);
+            teneoProcess(lithiumEvent, postText);
+          } else {
+            console.log(
+              `Public Text on Twitter could not be found`,
+              lithiumEvent
+            );
+          }
+        });
+    } else if (twitterChannelName.includes("private")) {
+      limiterPrivate
+        .schedule(() => getPrivateTweetMessage(lithiumEvent))
+        .then(dmText => {
+          if (dmText) {
+            console.log(`DM Tweet Text`, dmText);
+            teneoProcess(lithiumEvent, dmText);
+          } else {
+            console.log(
+              `WARNING: Private Tweet could be found for: `,
+              lithiumEvent
+            );
+          }
+        });
+    }
   }
 };
 
