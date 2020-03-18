@@ -10,7 +10,9 @@
 
 ## About the Connector
 
-This connector will register Teneo as a bot in Khoros. The connector will allow Teneo to reposond to Social Posts on both Twitter and Facebook through Khoros. The bot is capable of:
+This connector will register [Teneo](https://www.teneo.ai/) as a bot in [Khoros Response](https://khoros.com/platform/care/response) . The connector allows [Teneo](https://www.teneo.ai/) to automcatically respond to social media posts on both Twitter and Facebook through Khoros.
+
+### The bot is capable of:
 
 - Resolving
 - Adding notes
@@ -39,6 +41,13 @@ workQueue | workQueueIdName | comment ||
 richImage | imageLinkUrl | imageTitle | imageUrl | mimeTypeOfImage ||
 richVideo | videoLinkUrl | videoTitle | videoUrl | mimeTypeOfVideo ||
 ```
+
+### Webhook Routes
+
+| Context Path | Description                                                                                                                             |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`          | Default webhook path for all inbound Khoros posts                                                                                       |
+| `/register`  | GET once to register bot with Khoros and to register interest<br>in both Twitter and Facebook as well as obtain a authentication token. |
 
 [GitHub](https://github.com/jolzee/teneo-khoros-bot-connector)
 
@@ -121,6 +130,63 @@ services:
       - "3000:3000"
     env_file:
       - .env
+    links:
+      - redis
+  redis:
+    image: "bitnami/redis:latest"
+    container_name: redis
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - ./docker/redis-persistence:/bitnami/redis/data
+  ngrok:
+    image: "wernight/ngrok:latest"
+    container_name: ngrok
+    command:
+      [sh, -c, "echo NGROK Admin URL http://localhost:4040 && /entrypoint.sh"]
+    links:
+      - teneo-khoros-webhook:http
+    ports:
+      - "4040:4040"
+    environment:
+      - NGROK_PORT=teneo-khoros-webhook:3000
+      - NGROK_REGION=us
+      - NGROK_BINDTLS=true
+```
+
+### With inline Environment Variables
+
+```yml
+version: "3"
+services:
+  teneo-khoros-webhook:
+    image: jolzee/teneo-khoros-webhook
+    container_name: teneo-khoros-webhook
+    ports:
+      - "3000:3000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=MySecureRedisPassword
+      - TENEO_BOT_NAME=Teneo
+      - TENEO_SUPPORT_EMAIL=
+      - TENEO_TIE_URL=
+      - TENEO_AVATAR_URL=
+      - TENEO_CALLBACK_URL=
+      - KHOROS_BASE_API_URL=https://api.app.lithium.com/bots/v3
+      - KHOROS_BASE_TOKEN_URL=https://<KHOROS_COMPANY_KEY>.response.lithium.com/api/v2/tokens/khorosapi/ownerId/
+      - KHOROS_ACCESS_TOKEN_CACHE_KEY=khorosBotAccessToken
+      - KHOROS_CREDENTIALS_USERNAME=<myKhorosUsername>
+      - KHOROS_CREDENTIALS_PASSWORD=<myKhorosPassword>
+      - KHOROS_APP_ID=<appId>
+      - KHOROS_COMPANY_KEY=<cmpyKey>
+      - KHOROS_NETWORK_TWITTER_EXTERNAL_ID=<something>
+      - KHOROS_NETWORK_TWITTER_AUTH_ACCOUNT_ID=<something>
+      - KHOROS_NETWORK_TWITTER_AUTH_CONSUMER_KEY=<something>
+      - KHOROS_NETWORK_TWITTER_AUTH_CONSUMER_SECRET=<something>
+      - KHOROS_NETWORK_TWITTER_AUTH_ACCESS_TOKEN_KEY=<something>
+      - KHOROS_NETWORK_TWITTER_AUTH_ACCESS_TOKEN_SECRET=<something>
+      - KHOROS_NETWORK_FACEBOOK_EXTERNAL_ID=<something>
     links:
       - redis
   redis:
