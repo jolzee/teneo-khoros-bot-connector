@@ -45,7 +45,7 @@ export const lithium = {
         coordinate: lithiumEvent.coordinate, //the bot simply passes the coordinate back
         author: lithiumEvent.author, //the bot simply passes the author back
         type: "message",
-        text: text
+        text: text.trim()
       });
     },
     imageReply: (lithiumEvent, text, imageUrl) => {
@@ -57,7 +57,7 @@ export const lithium = {
           url: imageUrl, // The fully-qualified, publicly-available reference to the media
           mediaType: "IMAGE" // IMAGE, VIDEO
         },
-        text: text
+        text: text.trim()
       });
     },
     videoReply: (lithiumEvent, text, videoUrl) => {
@@ -69,7 +69,7 @@ export const lithium = {
           url: videoUrl, // The fully-qualified, publicly-available reference to the media
           mediaType: "VIDEO" // IMAGE, VIDEO
         },
-        text: text
+        text: text.trim()
       });
     },
     richImageReply: (
@@ -91,7 +91,7 @@ export const lithium = {
           mediaUrl: imageUrl, // Required. A URL of a media resource like an image or video. Handling may be network-specific.
           mimeType: mimeType // "image/jpeg" // Required. The MIME type of the resource at mediaUrl.
         },
-        text: text
+        text: text.trim()
       });
     },
     richVideoReply: (
@@ -113,7 +113,7 @@ export const lithium = {
           mediaUrl: videoUrl, // Required. A URL of a media resource like an image or video. Handling may be network-specific.
           mimeType: mimeType // "video/mp4" // Required. The MIME type of the resource at mediaUrl.
         },
-        text: text
+        text: text.trim()
       });
     },
     /**
@@ -154,13 +154,8 @@ export const lithium = {
     /**
      * Use the Bot v3 API to have a bot move a conversation to a specific workqueue
      */
-    changeWorkQueue: (
-      lithiumEvent,
-      newWorkQueue,
-      conversationDisplayId,
-      comment
-    ) => {
-      return {
+    changeWorkQueue: (lithiumEvent, newWorkQueue, comment) => {
+      let payload = {
         path: "/workqueue",
         method: "PUT",
         payload: {
@@ -168,10 +163,14 @@ export const lithium = {
           coordinate: lithiumEvent.coordinate, // A Coordinate object. This is object contains details about the bot and the message in context. It is used by Khoros Care.
           author: lithiumEvent.author, // An Author object representing the message author on the social network channel.
           comment: comment, // An optional comment about this conversation resolution. Stored as an internal note visible in this case history in Khoros Care.
-          newWorkQueue: newWorkQueue, // Required. The integer ID of the workqueue you wish to move the conversation to. Must be a valid Care workqueue ID.
-          conversationDisplayId: conversationDisplayId // The integer conversation display ID. If present, the ID must match an existing conversation. If absent, we will attempt to match an eligible case based on author and network.
+          newWorkQueue: newWorkQueue // Required. The integer ID of the workqueue you wish to move the conversation to. Must be a valid Care workqueue ID.
         }
       };
+      // The integer conversation display ID. If present, the ID must match an existing conversation. If absent, we will attempt to match an eligible case based on author and network.
+      if (lithiumEvent.conversation && lithiumEvent.conversation.displayId) {
+        payload.conversationDisplayId = lithiumEvent.conversation.displayId;
+      }
+      return payload;
     },
     /**
      * Have a bot mark a conversation as resolved using the Bot v3 API
@@ -211,6 +210,7 @@ export const lithium = {
         path: "/tag",
         method: "PUT",
         payload: {
+          type: "tag",
           entityType: "POST",
           coordinate: lithiumEvent.coordinate, // A Coordinate object. This is object contains details about the bot and the message in context. It is used by Khoros Care.
           author: lithiumEvent.author, // An Author object representing the message author on the social network channel.

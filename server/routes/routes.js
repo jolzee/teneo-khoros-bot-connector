@@ -6,18 +6,20 @@
  * Khoros Docs: https://developer.khoros.com/khoroscaredevdocs/reference#bot-api-3
  */
 require("dotenv").config();
-import {
-  lithium,
-  limiterConfigPublicTwitter,
-  limiterConfigPrivateTwitter,
-  twitterConfig
-} from "../lib/config";
+const superagent = require("superagent");
 import Bottleneck from "bottleneck";
-import { isEmpty } from "../lib/lib";
+import moment from "moment";
 import Redis from "ioredis";
 import TIE from "@artificialsolutions/tie-api-client";
-import moment from "moment";
 import Twit from "twit";
+
+import {
+  limiterConfigPrivateTwitter,
+  limiterConfigPublicTwitter,
+  lithium,
+  twitterConfig
+} from "../lib/config";
+import { isEmpty } from "../lib/lib";
 const limiterPublic = new Bottleneck(limiterConfigPublicTwitter); // To help with Twitter rate limits
 const limiterPrivate = new Bottleneck(limiterConfigPrivateTwitter); // To help with Twitter rate limits
 const limiterKhoros = new Bottleneck(limiterKhoros); // queue Khoros API requests // 2 per second
@@ -28,7 +30,6 @@ const redis = new Redis({
   password: process.env.REDIS_PASSWORD
 });
 
-const r2 = require("r2"); // http library
 const T = new Twit(twitterConfig);
 
 const logTeneoResponse = teneoResponse => {
@@ -36,42 +37,57 @@ const logTeneoResponse = teneoResponse => {
   return teneoResponse;
 };
 
+const generateChannelName = lithiumEvent => {
+  // ("twitter-private/twitter-public/facebook-private/facebook-public");
+  let channelName = `${lithiumEvent.coordinate.networkKey}-${(
+    lithiumEvent.coordinate.scope + ""
+  ).toLowerCase()}`;
+  console.log("Responding to CHANNEL:", channelName);
+  return channelName;
+};
+
 /**
  * Lithium only gives us the twitter post id. We need to get the message text via API call directly to twitter.
  * https://tinyurl.com/ungrfn8
  */
 const getPublicTweetMessage = async lithiumEvent => {
-  const tweetId = lithiumEvent.coordinate.messageId;
-  const params = {
-    id: tweetId
-  };
-  T.get(`statuses/show`, params, (err, data, response) => {
-    if (err) {
-      console.log(`Could not find tweetId ${tweetId} publically`);
-      return null;
-    } else {
-      console.log(`SUCCESS:Twitter:GET:statuses/show`, tweetId, data.text);
-      return data.text; // lots of information available https://developer.twitter.com/en/docs/tweets/post-and-engage/api-reference/get-statuses-show-id
-    }
+  return new Promise((resolve, reject) => {
+    const tweetId = lithiumEvent.coordinate.messageId;
+    const params = {
+      id: tweetId
+    };
+    T.get(`statuses/show`, params, (err, data, response) => {
+      if (err) {
+        console.log(`Could not find tweetId ${tweetId} publically`);
+        resolve(null);
+      } else {
+        console.log(`SUCCESS:Twitter:GET:statuses/show`, tweetId, data.text);
+        resolve(data.text); // lots of information available https://developer.twitter.com/en/docs/tweets/post-and-engage/api-reference/get-statuses-show-id
+      }
+    });
   });
 };
 
 const getPrivateTweetMessage = async lithiumEvent => {
-  console.log(`ERROR:Twitter:GET:statuses/show`, tweetId);
-  T.get(`direct_messages/events/show`, params, (err, data, response) => {
-    // https://developer.twitter.com/en/docs/direct-messages/sending-and-receiving/api-reference/get-event
-    if (err) {
-      console.log(`ERROR:Twitter:GET:direct_messages/events/show`, tweetId);
-      // TODO: Think about what to do here
-      return null;
-    } else {
-      console.log(
-        `SUCCESS:Twitter:GET:direct_messages/events/show`,
-        tweetId,
-        data.event.message_create.message_data.text
-      );
-      return data.event.message_create.message_data.text;
-    }
+  return new Promise((resolve, reject) => {
+    const tweetId = lithiumEvent.coordinate.messageId;
+    const params = {
+      id: tweetId
+    };
+    T.get(`direct_messages/events/show`, params, (err, data, response) => {
+      // https://developer.twitter.com/en/docs/direct-messages/sending-and-receiving/api-reference/get-event
+      if (err) {
+        console.log(`ERROR:Twitter:GET:direct_messages/events/show`, tweetId);
+        resolve(null);
+      } else {
+        console.log(
+          `SUCCESS:Twitter:GET:direct_messages/events/show`,
+          tweetId,
+          data.event.message_create.message_data.text
+        );
+        resolve(data.event.message_create.message_data.text);
+      }
+    });
   });
 };
 
@@ -106,13 +122,12 @@ const session = {
   }
 };
 
-const token = {
+const tokenObj = {
   registerBot: async () => {
     return new Promise(async (resolve, reject) => {
-      let accessToken = await token.getAccessToken();
+      let accessToken = await tokenObj.getAccessToken();
       let responses = [];
       if (accessToken) {
-        console.log(`Acess Token`, accessToken);
         lithium.bot.networks.forEach(async network => {
           const registrationPayload = {
             companyKey: lithium.bot.companyKey,
@@ -131,22 +146,28 @@ const token = {
             credentials: lithium.bot.callbackCredentials
           };
 
-          const auth = `Bearer ${accessToken.token}`;
-          const payload = {
-            Authorization: auth,
-            json: registrationPayload
-          };
-          try {
-            let responseJson = await r2.post(lithium.registrationUrl, {
-              payload
-            }).json;
-            responses.push(responseJson);
-          } catch (e) {
-            console.error(
-              `Bot Registration: ${registrationPayload.name}`,
-              e.message
-            );
-          }
+          const auth = `Bearer ${accessToken}`;
+
+          superagent
+            .post(lithium.registrationUrl)
+            .send(registrationPayload)
+            .set("Authorization", auth)
+            .set("Accept", "application/json")
+            .then(resp => {
+              let responseJson = JSON.stringify(resp.body);
+              console.log(`Register Bot with network response: `, responseJson);
+              responses.push(responseJson);
+            })
+            .catch(error => {
+              console.error(
+                `Bot Registration: ${registrationPayload.name}`,
+                error.message
+              );
+              responses.push({
+                status: "error",
+                message: error.message
+              });
+            });
         });
         resolve(responses);
       } else {
@@ -164,24 +185,33 @@ const token = {
       Buffer.from(
         lithium.credentials.username + ":" + lithium.credentials.password
       ).toString("base64");
-    const headers = {
-      Authorization: auth
-    };
     try {
-      let resp = await r2.post(lithium.tokenUrl, { headers }).json;
-      // let resp = {
-      //   status: "success",
-      //   data: {
-      //     token: "<token>",
-      //     expiresAtMillis: "<epochMillis>"
-      //   }
-      // };
-      if (resp && resp.status === "success") {
-        this.cacheAccessToken(resp);
-        return resp.data;
-      } else {
-        return null;
-      }
+      superagent
+        .post(lithium.tokenUrl)
+        .send(registrationPayload)
+        .set("Authorization", auth)
+        .set("Accept", "application/json")
+        .then(resp => {
+          let responseJson = JSON.stringify(resp.body);
+          console.log(responseJson);
+          // let resp = {
+          //   status: "success",
+          //   data: {
+          //     token: "mytoken",
+          //     expiresAtMillis: "<epochMillis>"
+          //   }
+          // };
+          if (responseJson.status === "success") {
+            tokenObj.cacheAccessToken(responseJson);
+            return responseJson.data;
+          } else {
+            return null;
+          }
+        })
+        .catch(error => {
+          console.error(`Could not requestNewAccessToken`, error.message);
+          return null;
+        });
     } catch (e) {
       console.error(`Could not requestNewAccessToken`, e.message);
       return null;
@@ -194,24 +224,26 @@ const token = {
   refreshAccessToken: async token => {
     // refresh
     const auth = `Bearer ${token}`;
-    const headers = {
-      Authorization: auth
-    };
-    try {
-      let resp = await r2.put(lithium.refreshTokenUrl, { headers }).json;
 
-      // cache
-      if (resp && resp.status === "success") {
-        this.cacheAccessToken(resp);
-        // return
-        return resp.data;
-      } else {
+    superagent
+      .put(lithium.refreshTokenUrl)
+      .set("Authorization", auth)
+      .set("Accept", "application/json")
+      .then(resp => {
+        let responseJson = JSON.stringify(resp.body);
+        // cache
+        if (responseJson.status === "success") {
+          tokenObj.cacheAccessToken(responseJson);
+          // return
+          return responseJson.data;
+        } else {
+          return null;
+        }
+      })
+      .catch(error => {
+        console.error(`refreshAccessToken`, error);
         return null;
-      }
-    } catch (error) {
-      console.error(`refreshAccessToken`, error);
-      return null;
-    }
+      });
   },
   /**
    * Either returns the token or null
@@ -225,7 +257,7 @@ const token = {
             "REDIS:GET[KHOROS_ACCESS_TOKEN] ",
             cachedAccessTokenResponse
           );
-          resolve(cachedAccessTokenResponse);
+          resolve(JSON.parse(cachedAccessTokenResponse));
         })
         .catch(err => {
           console.log(`No Cached Access Token in Redis`, err);
@@ -239,12 +271,12 @@ const token = {
   cacheAccessToken: responseToken => {
     let expires = moment(responseToken.data.expiresAtMillis);
     let now = moment();
-    let secondsUntilExpiry = expires.dif(now, "seconds");
+    let secondsUntilExpiry = expires.diff(now, "seconds");
 
     redis
       .set(
         lithium.KHOROS_ACCESS_TOKEN_CACHE_KEY,
-        responseToken.data,
+        JSON.stringify(responseToken.data),
         "EX",
         secondsUntilExpiry
       )
@@ -262,20 +294,20 @@ const token = {
    * check cache, refresh if needed or request new token
    */
   getAccessToken: async () => {
-    let accessToken = await token.getCachedAccessToken();
+    let accessToken = await tokenObj.getCachedAccessToken();
     if (accessToken) {
       // found an existing access token
       let expires = moment(accessToken.expiresAtMillis);
       let now = moment();
-      let daysUntilExpiry = expires.dif(now, "days");
+      let daysUntilExpiry = expires.diff(now, "days");
       if (daysUntilExpiry < 83) {
         // request refresh to existing token - a week has passed
-        accessToken = await this.refreshAccessToken(accessToken.token);
+        accessToken = await tokenObj.refreshAccessToken(accessToken.token);
       }
       return accessToken.token;
     } else {
       // no access token found in cache - ask for a new token
-      let accessToken = await token.requestNewAccessToken();
+      let accessToken = await tokenObj.requestNewAccessToken();
       return accessToken ? accessToken.token : null;
     }
   }
@@ -366,15 +398,19 @@ const handleTeneoResponse = async (lithiumEvent, teneoResponse) => {
     teneoResponse.output.text
   );
 
-  let hasSendTeneoAnswerText = false;
+  // console.log(`Simple Payload`, simplePayload, simplePayload.payload.text);
 
-  if (isEmpty(extraInfo)) {
+  if (
+    (isEmpty(extraInfo) || !("khoros" in extraInfo)) &&
+    simplePayload.payload.text
+  ) {
     console.log(`Queueing task "textReply" to Khoros:`, simplePayload);
     limiterKhoros
       .schedule(() => doKhorosBotApiCall(simplePayload))
       .then(khorosResp => {
-        console.log(`Response task "textReply" from Khoros:`, khorosResp);
-      });
+        console.log(`Success: "textReply" sent toKhoros:`);
+      })
+      .catch(err => console.error(`Error: Failed to send reply`, err));
   } else if (extraInfo.khoros) {
     // image | imageUrl ||
     // video | videoUrlMp4 ||
@@ -390,41 +426,49 @@ const handleTeneoResponse = async (lithiumEvent, teneoResponse) => {
       let taskList = parseTasksFromTeneoResponse(extraInfo.khoros);
 
       // let's adhere to the rules
-      let tasksThatPostAnswers = taskList.filter(task => task.postsAnAnswer);
-      let tasksThatShouldNotPostAnswers = taskList.filter(
+      let tasksThatSendReplies = taskList.filter(task => task.postsAnAnswer);
+      let tasksForbiddingBotReply = taskList.filter(
         task => !task.shouldPostAnswer
       );
 
-      let aTaskThatPostAnAnswer = tasksThatPostAnswers.find(
+      // Find the first task that posts an answer. Ignore others if present
+      let aTaskThatSendsReply = tasksThatSendReplies.find(
         task => task.postsAnAnswer
       );
 
+      // find meta tasks that don't actually send text response but should be associated a reply grouping
       let metaTasks = taskList.filter(
         task => !task.postsAnAnswer && task.shouldPostAnswer
       );
 
-      // only send a simple text reply when we are allowed to
+      // only send a simple text reply when we are allowed to -
+      // ie.no existing rich responses or any tasks that explicity prohibit a response at all
       if (
-        tasksThatPostAnswers.length === 0 &&
-        tasksThatShouldNotPostAnswers === 0
+        tasksThatSendReplies.length === 0 &&
+        tasksForbiddingBotReply.length === 0 &&
+        simplePayload.payload.text
       ) {
         console.log(`Queueing task "textReply" to Khoros:`, simplePayload);
         limiterKhoros
           .schedule(() => doKhorosBotApiCall(simplePayload))
           .then(khorosResp => {
-            console.log(`Response task "textReply" from Khoros:`, khorosResp);
-          });
+            console.log(`Success: Reply sent to Khoros`);
+          })
+          .catch(err =>
+            console.error(`Error: Failed to send a reply with meta`, err)
+          );
       }
-      if (tasksThatShouldNotPostAnswers.length > 0) {
-        taskList = tasksThatShouldNotPostAnswers; // ignore others so that we don't post when we shouldn't
+      if (tasksForbiddingBotReply.length > 0) {
+        taskList = tasksForbiddingBotReply; // ignore others so that we don't post when we shouldn't
       } else {
-        taskList = [aTaskThatPostAnAnswer].concat(metaTasks); // combine arrays
-        taskList.sort(sortBy("order"));
+        taskList = [aTaskThatSendsReply].concat(metaTasks); // combine arrays
+        taskList.sort(sortBy("order")); // important to get these in the correct order
       }
 
-      console.log("Final Task List", taskList);
+      const finalTaskList = taskList.filter(e => e != null);
 
-      taskList.forEach(async task => {
+      console.log("Final Task List", finalTaskList);
+      for (const task of finalTaskList) {
         let taskName = task.name.toLowerCase();
         let jsonPayload = {};
         switch (taskName) {
@@ -479,12 +523,10 @@ const handleTeneoResponse = async (lithiumEvent, teneoResponse) => {
             }
             break;
           case "workqueue":
-            // TODO: Test this. conversationDisplayId?
             if (task.info.length > 2) {
               jsonPayload = lithium.routes.changeWorkQueue(
                 lithiumEvent,
                 task.info[1],
-                "conversationDisplayId",
                 task.info[2]
               );
             }
@@ -522,12 +564,14 @@ const handleTeneoResponse = async (lithiumEvent, teneoResponse) => {
             .schedule(() => doKhorosBotApiCall(jsonPayload))
             .then(khorosBotApiCallResponse => {
               console.log(
-                `Response task "${taskName}" from Khoros:`,
-                khorosBotApiCallResponse
+                `Success: Task "${taskName}" successfully sent to Khoros:`
               );
-            });
+            })
+            .catch(anErr =>
+              console.error(`Error: Failed to handover to agent`, anErr)
+            );
         }
-      });
+      }
     } catch (err) {
       console.error(
         "There was a problem parsing Khoros tasks from Teneo",
@@ -535,20 +579,17 @@ const handleTeneoResponse = async (lithiumEvent, teneoResponse) => {
       );
     }
   }
-
-  //   TIE.close(teneoEngineUrl, sessionId);
-  //   session.deleteSessionId(khorosPostId);
 };
 
 const teneoProcess = async (lithiumEvent, postText = null) => {
   postText = postText ? postText : lithiumEvent.text;
 
   const teneoSessionId = await session.findSessionId(lithiumEvent.author.id);
+
   TIE.sendInput(lithium.bot.tieUrl, teneoSessionId, {
     text: postText,
     channel: "khoros",
-    socialMediaChannel:
-      "twitter-private/twitter-public/facebook-private/facebook-public"
+    socialMediaChannel: generateChannelName(lithiumEvent)
   })
     .then(logTeneoResponse)
     .then(teneoResponse => {
@@ -556,7 +597,6 @@ const teneoProcess = async (lithiumEvent, postText = null) => {
     })
     .catch(err => {
       console.error("Teneo ERROR:", err);
-      // TODO: Think about how to handle this
     });
 };
 
@@ -565,7 +605,6 @@ const teneoProcess = async (lithiumEvent, postText = null) => {
  * @param {*} lithiumEvent is the event delivered by Lithium
  */
 const scheduleEvent = async lithiumEvent => {
-  // TODO: Investigate how to see if event is from Twitter and if it's public vs. private
   if (lithiumEvent.text) {
     // assume facebook
     teneoProcess(lithiumEvent); // no need to scheule anything
@@ -606,34 +645,43 @@ const doKhorosBotApiCall = async instructions => {
    * To ensure that emojis are delivered correctly, add charset=utf-8 to your header when using the /respondendpoint.
    * Content-Type: application/json; charset=utf-8
    */
+  const accessToken = await tokenObj.getAccessToken();
+  return new Promise((resolve, reject) => {
+    if (accessToken) {
+      let url = `${lithium.baseApiUrl}${instructions.path}`;
+      let request;
+      if (instructions.method === "POST") {
+        request = superagent.post(url);
+      } else {
+        request = superagent.put(url);
+      }
 
-  const accessToken = await token.getAccessToken();
-  if (accessToken) {
-    try {
-      const options = {
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-          Authorization: `Bearer ${accessToken}`
-        },
-        method: instructions.method,
-        json: instructions.payload
-      };
-      const response = await r2(
-        `${lithium.baseApiUrl}${instructions.path}`,
-        options
-      ).response;
-      return response;
-    } catch (error) {
-      console.error("Khoros ERROR", error);
+      request
+        .send(instructions.payload)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .set("Content-Type", "application/json; charset=utf-8")
+        .set("Accept", "application/json")
+        .then(resp => {
+          // console.log(`API response from Khoros`, resp);
+          let jsonResponse = JSON.stringify(resp.body);
+          resolve(jsonResponse);
+        })
+        .catch(error => {
+          reject(error);
+        });
+    } else {
+      reject({
+        message: "No access token can be found"
+      });
     }
-  } else {
-    console.error(`doKhorosBotApiCall:accessToken:null`);
-  }
+  });
 };
 
 const sendHandover = lithiumEvent => {
-  console.log("Pass control to Khoros agent:", payload);
-  doKhorosBotApiCall(lithium.routes.handover(lithiumEvent, ""));
+  console.log("Pass control to Khoros agent =>");
+  doKhorosBotApiCall(lithium.routes.handover(lithiumEvent, ""))
+    .then(resp => console.log(`Success: Handed off to agent`))
+    .catch(err => console.error(`Error: Failed to handover to agent`, err));
 };
 
 /**
@@ -641,14 +689,16 @@ const sendHandover = lithiumEvent => {
  */
 const processLithiumEvent = async lithiumEvent => {
   if (
-    lithiumEvent.type == "update" &&
-    lithiumEvent.operation == "AGENT_RESPONSE" &&
-    lithiumEvent.coordinate.scope == "PUBLIC"
+    lithiumEvent &&
+    lithiumEvent.type === "update" &&
+    lithiumEvent.operation === "AGENT_RESPONSE" &&
+    lithiumEvent.coordinate.scope === "PUBLIC"
   ) {
     sendHandover(lithiumEvent);
   } else if (
     lithiumEvent &&
-    lithiumEvent.owner.type === "bot" &&
+    lithiumEvent.owner &&
+    lithiumEvent.owner.type === "BOT" &&
     lithiumEvent.owner.appId === lithium.appId
   ) {
     /**
@@ -657,10 +707,8 @@ const processLithiumEvent = async lithiumEvent => {
      * So ignore type = [update|agent]
      */
     // Only process events you want to process
-    if (lithiumEvent.type == "message") {
+    if (lithiumEvent.type === "message") {
       scheduleEvent(lithiumEvent);
-    } else {
-      //TODO: What? Ignore?
     }
   }
 };
@@ -668,7 +716,7 @@ const processLithiumEvent = async lithiumEvent => {
 /** Register Bot will all networks [Twitter/Facebook] */
 const registerBot = () => {
   return new Promise((resolve, reject) => {
-    token.registerBot().then(responses => {
+    tokenObj.registerBot().then(responses => {
       resolve(responses);
     });
   });
