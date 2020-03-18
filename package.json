@@ -40,11 +40,11 @@
     "regenerator-runtime": "^0.13.5",
     "rimraf": "^3.0.2",
     "superagent": "^5.2.2",
-    "twit": "^2.2.11"
+    "twit": "^2.2.11",
+    "cross-env": "^7.0.2"
   },
   "devDependencies": {
     "@babel/node": "^7.8.7",
-    "cross-env": "^7.0.2",
     "jest": "^25.1.0"
   },
   "babel": {
