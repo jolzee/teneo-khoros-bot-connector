@@ -6,8 +6,8 @@
   "author": "Peter Joles <peter-joles@artificial-solutions.com> (https://www.linkedin.com/in/peterjoles/)",
   "main": "./dist-server/bin/www.js",
   "engines": {
-    "node": ">= 12.13.0",
-    "npm": ">= 6.12.0"
+    "node": ">= 13.11.0",
+    "npm": ">= 6.13.7"
   },
   "scripts": {
     "start": "npm run prod",
