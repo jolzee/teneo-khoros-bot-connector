@@ -10,7 +10,7 @@
 
 ## About the Connector
 
-This connector will register [Teneo](https://www.teneo.ai/) as a bot in [Khoros Response](https://khoros.com/platform/care/response) . The connector allows [Teneo](https://www.teneo.ai/) to automcatically respond to social media posts on both Twitter and Facebook through Khoros.
+This connector will register [Teneo](https://www.teneo.ai/) as a bot in [Khoros Response](https://khoros.com/platform/care/response) . The connector allows [Teneo](https://www.teneo.ai/) to automatically respond to social media posts on both Twitter and Facebook through Khoros.
 
 ### The bot is capable of:
 
@@ -47,13 +47,13 @@ richVideo | videoLinkUrl | videoTitle | videoUrl | mimeTypeOfVideo ||
 | Context Path | Description                                                                                                                             |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `/`          | Default webhook path for all inbound Khoros posts                                                                                       |
-| `/register`  | GET once to register bot with Khoros and to register interest<br>in both Twitter and Facebook as well as obtain a authentication token. |
+| `/register`  | GET once to register bot with Khoros and to register interest<br>in both Twitter and Facebook as well as obtain an authentication token. |
 
 [GitHub](https://github.com/jolzee/teneo-khoros-bot-connector)
 
 ## Running the Connector on Heroku
 
-If you don't already have a Redis Server then you can get one at [Redis Cloud](https://elements.heroku.com/addons/rediscloud)
+If you don't already have a Redis Server then you can get one running at [Redis Cloud](https://elements.heroku.com/addons/rediscloud) . Redis is used for session storage and for the long term persistence of the Khoros auth token.
 
 Click the button below to deploy the connector to Heroku:
 
