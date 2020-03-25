@@ -6,6 +6,7 @@
  * Khoros Docs: https://developer.khoros.com/khoroscaredevdocs/reference#bot-api-3
  */
 require("dotenv").config();
+const logger = require("./../config/winston");
 const superagent = require("superagent");
 import Bottleneck from "bottleneck";
 import moment from "moment";
@@ -18,8 +19,8 @@ import {
   limiterConfigPublicTwitter,
   lithium,
   twitterConfig
-} from "../lib/config";
-import { isEmpty } from "../lib/lib";
+} from "../config/khorosConfig";
+import { isEmpty } from "../lib/utils";
 const limiterPublic = new Bottleneck(limiterConfigPublicTwitter); // To help with Twitter rate limits
 const limiterPrivate = new Bottleneck(limiterConfigPrivateTwitter); // To help with Twitter rate limits
 const limiterKhoros = new Bottleneck(limiterKhoros); // queue Khoros API requests // 2 per second
@@ -33,7 +34,7 @@ const redis = new Redis({
 const T = new Twit(twitterConfig);
 
 const logTeneoResponse = teneoResponse => {
-  console.log("Teneo Response:", teneoResponse);
+  logger.info("Teneo Response:", teneoResponse);
   return teneoResponse;
 };
 
@@ -42,7 +43,7 @@ const generateChannelName = lithiumEvent => {
   let channelName = `${lithiumEvent.coordinate.networkKey}-${(
     lithiumEvent.coordinate.scope + ""
   ).toLowerCase()}`;
-  console.log("Responding to CHANNEL:", channelName);
+  logger.debug(`Responding to CHANNEL: ${channelName}`);
   return channelName;
 };
 
@@ -58,10 +59,12 @@ const getPublicTweetMessage = async lithiumEvent => {
     };
     T.get(`statuses/show`, params, (err, data, response) => {
       if (err) {
-        console.log(`Could not find tweetId ${tweetId} publically`);
+        logger.info(`Could not find tweetId ${tweetId} publically`);
         resolve(null);
       } else {
-        console.log(`SUCCESS:Twitter:GET:statuses/show`, tweetId, data.text);
+        logger.info(
+          `SUCCESS:Twitter:GET:statuses/show: ${tweetId} => ${data.text}`
+        );
         resolve(data.text); // lots of information available https://developer.twitter.com/en/docs/tweets/post-and-engage/api-reference/get-statuses-show-id
       }
     });
@@ -77,13 +80,13 @@ const getPrivateTweetMessage = async lithiumEvent => {
     T.get(`direct_messages/events/show`, params, (err, data, response) => {
       // https://developer.twitter.com/en/docs/direct-messages/sending-and-receiving/api-reference/get-event
       if (err) {
-        console.log(`ERROR:Twitter:GET:direct_messages/events/show`, tweetId);
+        logger.error(
+          `ERROR:Twitter:GET:direct_messages/events/show: ${tweetId}`
+        );
         resolve(null);
       } else {
-        console.log(
-          `SUCCESS:Twitter:GET:direct_messages/events/show`,
-          tweetId,
-          data.event.message_create.message_data.text
+        logger.debug(
+          `SUCCESS:Twitter:GET:direct_messages/events/show: ${tweetId}: ${data.event.message_create.message_data.text}`
         );
         resolve(data.event.message_create.message_data.text);
       }
@@ -94,7 +97,7 @@ const getPrivateTweetMessage = async lithiumEvent => {
 const session = {
   deleteSessionId: khorosId => {
     redis.del(khorosId).then(() => {
-      console.log("REDIS:DEL[SESSION] Deleted cache for key: ${khorosId}");
+      logger.debug(`REDIS:DEL[SESSION] Deleted cache for key: ${khorosId}`);
     });
   },
   findSessionId: async khorosId => {
@@ -102,11 +105,11 @@ const session = {
       redis
         .get(khorosId)
         .then(teneoSesisonId => {
-          console.log("REDIS:GET[SESSION] Teneo Session ID: ", teneoSesisonId);
+          logger.info(`REDIS:GET[SESSION] Teneo Session ID: ${teneoSesisonId}`);
           resolve(teneoSesisonId);
         })
         .catch(err => {
-          console.log("REDIS:GET[SESSION]", err);
+          logger.info("REDIS:GET[SESSION]", err);
           resolve(null);
         });
     });
@@ -114,10 +117,8 @@ const session = {
   cacheSessionId: (khorosPostId, teneoSessionId) => {
     let minutes = 20;
     redis.set(khorosPostId, teneoSessionId, "EX", minutes * 60);
-    console.log(
-      `REDIS:SET[SESSION] Caching Session Info for [${minutes}min]: `,
-      khorosPostId,
-      teneoSessionId
+    logger.debug(
+      `REDIS:SET[SESSION] Caching Session Info for [${minutes}min]: ${khorosPostId} ${teneoSessionId}`
     );
   }
 };
@@ -155,13 +156,12 @@ const tokenObj = {
             .set("Accept", "application/json")
             .then(resp => {
               let responseJson = JSON.stringify(resp.body);
-              console.log(`Register Bot with network response: `, responseJson);
+              logger.info(`Register Bot with network response: `, responseJson);
               responses.push(responseJson);
             })
             .catch(error => {
-              console.error(
-                `Bot Registration: ${registrationPayload.name}`,
-                error.message
+              logger.error(
+                `Bot Registration: ${registrationPayload.name}:  ${error.message}`
               );
               responses.push({
                 status: "error",
@@ -193,7 +193,7 @@ const tokenObj = {
         .set("Accept", "application/json")
         .then(resp => {
           let responseJson = JSON.stringify(resp.body);
-          console.log(responseJson);
+          logger.info(responseJson);
           // let resp = {
           //   status: "success",
           //   data: {
@@ -209,11 +209,11 @@ const tokenObj = {
           }
         })
         .catch(error => {
-          console.error(`Could not requestNewAccessToken`, error.message);
+          logger.error(`Could not requestNewAccessToken: ${error.message}`);
           return null;
         });
     } catch (e) {
-      console.error(`Could not requestNewAccessToken`, e.message);
+      logger.error(`Could not requestNewAccessToken: ${e.message}`);
       return null;
     }
   },
@@ -223,11 +223,9 @@ const tokenObj = {
    */
   refreshAccessToken: async token => {
     // refresh
-    const auth = `Bearer ${token}`;
-
     superagent
       .put(lithium.refreshTokenUrl)
-      .set("Authorization", auth)
+      .set("Authorization", `Bearer ${token}`)
       .set("Accept", "application/json")
       .then(resp => {
         let responseJson = JSON.stringify(resp.body);
@@ -241,7 +239,7 @@ const tokenObj = {
         }
       })
       .catch(error => {
-        console.error(`refreshAccessToken`, error);
+        logger.error(`refreshAccessToken: ${error.message}`);
         return null;
       });
   },
@@ -253,14 +251,13 @@ const tokenObj = {
       redis
         .get(lithium.KHOROS_ACCESS_TOKEN_CACHE_KEY)
         .then(cachedAccessTokenResponse => {
-          console.log(
-            "REDIS:GET[KHOROS_ACCESS_TOKEN] ",
-            cachedAccessTokenResponse
-          );
-          resolve(JSON.parse(cachedAccessTokenResponse));
+          logger.info(`ACCESS TOKEN RAW: ${cachedAccessTokenResponse}`);
+          let parsedToken = JSON.parse(cachedAccessTokenResponse);
+          logger.debug("REDIS:GET[KHOROS_ACCESS_TOKEN] ", parsedToken);
+          resolve(parsedToken);
         })
         .catch(err => {
-          console.log(`No Cached Access Token in Redis`, err);
+          logger.warn(`No Cached Access Token in Redis`, err);
           resolve(null);
         });
     });
@@ -281,10 +278,8 @@ const tokenObj = {
         secondsUntilExpiry
       )
       .then(() => {
-        console.log(
-          `REDIS:SET:ACCESS_TOKEN`,
-          responseToken.data,
-          `For ${secondsUntilExpiry} secs`
+        logger.info(
+          `REDIS:SET:ACCESS_TOKEN: cached access token for ${secondsUntilExpiry} secs`
         );
       });
   },
@@ -294,15 +289,23 @@ const tokenObj = {
    * check cache, refresh if needed or request new token
    */
   getAccessToken: async () => {
+    let configDaysUntilExpiry = 10;
     let accessToken = await tokenObj.getCachedAccessToken();
     if (accessToken) {
       // found an existing access token
       let expires = moment(accessToken.expiresAtMillis);
       let now = moment();
       let daysUntilExpiry = expires.diff(now, "days");
-      if (daysUntilExpiry < 83) {
+      if (daysUntilExpiry < configDaysUntilExpiry) {
+        logger.info(`Trying to refresh access token: ${accessToken.token} `);
         // request refresh to existing token - a week has passed
-        accessToken = await tokenObj.refreshAccessToken(accessToken.token);
+
+        let newAccessToken = await tokenObj.refreshAccessToken(
+          accessToken.token
+        );
+        if (newAccessToken) {
+          accessToken = newAccessToken;
+        }
       }
       return accessToken.token;
     } else {
@@ -398,19 +401,21 @@ const handleTeneoResponse = async (lithiumEvent, teneoResponse) => {
     teneoResponse.output.text
   );
 
-  // console.log(`Simple Payload`, simplePayload, simplePayload.payload.text);
+  // logger.info(`Simple Payload`, simplePayload, simplePayload.payload.text);
 
   if (
     (isEmpty(extraInfo) || !("khoros" in extraInfo)) &&
     simplePayload.payload.text
   ) {
-    console.log(`Queueing task "textReply" to Khoros:`, simplePayload);
+    logger.info(`Queueing task "textReply" to Khoros:`, simplePayload);
     limiterKhoros
       .schedule(() => doKhorosBotApiCall(simplePayload))
       .then(khorosResp => {
-        console.log(`Success: "textReply" sent toKhoros:`);
+        logger.info(`Success: "textReply" sent toKhoros`);
       })
-      .catch(err => console.error(`Error: Failed to send reply`, err));
+      .catch(err =>
+        logger.error(`Error: Failed to send reply: ${err.message}`)
+      );
   } else if (extraInfo.khoros) {
     // image | imageUrl ||
     // video | videoUrlMp4 ||
@@ -448,14 +453,16 @@ const handleTeneoResponse = async (lithiumEvent, teneoResponse) => {
         tasksForbiddingBotReply.length === 0 &&
         simplePayload.payload.text
       ) {
-        console.log(`Queueing task "textReply" to Khoros:`, simplePayload);
+        logger.info(`Queueing task "textReply" to Khoros:`, simplePayload);
         limiterKhoros
           .schedule(() => doKhorosBotApiCall(simplePayload))
           .then(khorosResp => {
-            console.log(`Success: Reply sent to Khoros`);
+            logger.info(`Success: Reply sent to Khoros`);
           })
           .catch(err =>
-            console.error(`Error: Failed to send a reply with meta`, err)
+            logger.error(
+              `Error: Failed to send a reply with meta: ${err.message}`
+            )
           );
       }
       if (tasksForbiddingBotReply.length > 0) {
@@ -467,7 +474,7 @@ const handleTeneoResponse = async (lithiumEvent, teneoResponse) => {
 
       const finalTaskList = taskList.filter(e => e != null);
 
-      console.log("Final Task List", finalTaskList);
+      logger.info("Final Task List", finalTaskList);
       for (const task of finalTaskList) {
         let taskName = task.name.toLowerCase();
         let jsonPayload = {};
@@ -559,23 +566,24 @@ const handleTeneoResponse = async (lithiumEvent, teneoResponse) => {
             break;
         }
         if (!isEmpty(jsonPayload)) {
-          console.log(`Queueing task "${taskName}" to Khoros:`, jsonPayload);
+          logger.info(`Queueing task "${taskName}" to Khoros:`, jsonPayload);
           limiterKhoros
             .schedule(() => doKhorosBotApiCall(jsonPayload))
             .then(khorosBotApiCallResponse => {
-              console.log(
+              logger.info(
                 `Success: Task "${taskName}" successfully sent to Khoros:`
               );
             })
             .catch(anErr =>
-              console.error(`Error: Failed to handover to agent`, anErr)
+              logger.error(
+                `Error: Failed to handover to agent: ${anErr.message}`
+              )
             );
         }
       }
     } catch (err) {
-      console.error(
-        "There was a problem parsing Khoros tasks from Teneo",
-        err.message
+      logger.error(
+        `There was a problem parsing Khoros tasks from Teneo: ${err.message}`
       );
     }
   }
@@ -596,7 +604,7 @@ const teneoProcess = async (lithiumEvent, postText = null) => {
       handleTeneoResponse(lithiumEvent, teneoResponse);
     })
     .catch(err => {
-      console.error("Teneo ERROR:", err);
+      logger.error(`Teneo ERROR:  ${err.message}`);
     });
 };
 
@@ -617,10 +625,10 @@ const scheduleEvent = async lithiumEvent => {
         .schedule(() => getPublicTweetMessage(lithiumEvent))
         .then(postText => {
           if (postText) {
-            console.log(`Public Tweet Text`, postText);
+            logger.info(`Public Tweet Text: ${postText}`);
             teneoProcess(lithiumEvent, postText);
           } else {
-            console.log(
+            logger.info(
               `Public Text on Twitter could not be found`,
               lithiumEvent
             );
@@ -631,10 +639,10 @@ const scheduleEvent = async lithiumEvent => {
         .schedule(() => getPrivateTweetMessage(lithiumEvent))
         .then(dmText => {
           if (dmText) {
-            console.log(`DM Tweet Text`, dmText);
+            logger.info(`DM Tweet Text: ${dmText}`);
             teneoProcess(lithiumEvent, dmText);
           } else {
-            console.log(
+            logger.warning(
               `WARNING: Private Tweet could be found for: `,
               lithiumEvent
             );
@@ -670,7 +678,7 @@ const doKhorosBotApiCall = async instructions => {
         .set("Content-Type", "application/json; charset=utf-8")
         .set("Accept", "application/json")
         .then(resp => {
-          // console.log(`API response from Khoros`, resp);
+          // logger.info(`API response from Khoros`, resp);
           let jsonResponse = JSON.stringify(resp.body);
           resolve(jsonResponse);
         })
@@ -686,10 +694,12 @@ const doKhorosBotApiCall = async instructions => {
 };
 
 const sendHandover = lithiumEvent => {
-  console.log("Pass control to Khoros agent =>");
+  logger.info("Pass control to Khoros agent =>");
   doKhorosBotApiCall(lithium.routes.handover(lithiumEvent, ""))
-    .then(resp => console.log(`Success: Handed off to agent`))
-    .catch(err => console.error(`Error: Failed to handover to agent`, err));
+    .then(resp => logger.info(`Success: Handed off to agent`))
+    .catch(err =>
+      logger.error(`Error: Failed to handover to agent:  ${err.message}`)
+    );
 };
 
 /**
@@ -755,7 +765,7 @@ export const khorosInbound = (req, res) => {
   //   "type"        : "message"
   // }
   const lithiumEvent = req.body;
-  console.log("Khoros Event: ", lithiumEvent); //log the event
+  logger.info("Khoros Event: ", lithiumEvent); //log the event
   processLithiumEvent(lithiumEvent);
   res.status(202).json({ message: "Teneo - Roger that", echo: lithiumEvent });
 };
@@ -772,5 +782,5 @@ export const khorosRegisterBot = (req, res) => {
         results: responses
       });
     })
-    .catch(err => console.error(`Registration Error:`, err.message));
+    .catch(err => logger.error(`Registration Error:  ${err.message}`));
 };

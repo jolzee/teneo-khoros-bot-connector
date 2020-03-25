@@ -122,7 +122,7 @@ export const removeNonASCII = str => {
 
 // ES6, native Promises, arrow functions, default arguments
 // wait(1000).then(() => {
-//   console.log("b");
+//   logger.info("b");
 // });
 export const wait = (ms = 0) => {
   return new Promise(r => setTimeout(r, ms));
