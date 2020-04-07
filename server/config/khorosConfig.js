@@ -16,7 +16,7 @@ export const lithium = {
   },
   credentials: {
     username: process.env.KHOROS_CREDENTIALS_USERNAME,
-    password: process.env.KHOROS_CREDENTIALS_PASSWORD
+    password: process.env.KHOROS_CREDENTIALS_PASSWORD,
   },
   // https://developer.khoros.com/khoroscaredevdocs/reference
   routes: {
@@ -33,11 +33,11 @@ export const lithium = {
       Note: A raw passthrough and a listpicker cannot be set in the same message payload.
       Note: A bot attempting to respond to a conversation it doesn’t own will receive a 403 Forbidden response.
     */
-    respond: payload => {
+    respond: (payload) => {
       return {
         path: "/respond",
         method: "POST",
-        payload: payload
+        payload: payload,
       };
     },
     textReply: (lithiumEvent, text) => {
@@ -45,7 +45,7 @@ export const lithium = {
         coordinate: lithiumEvent.coordinate, //the bot simply passes the coordinate back
         author: lithiumEvent.author, //the bot simply passes the author back
         type: "message",
-        text: text.trim()
+        text: text.trim(),
       });
     },
     imageReply: (lithiumEvent, text, imageUrl) => {
@@ -55,9 +55,9 @@ export const lithium = {
         type: "message",
         media: {
           url: imageUrl, // The fully-qualified, publicly-available reference to the media
-          mediaType: "IMAGE" // IMAGE, VIDEO
+          mediaType: "IMAGE", // IMAGE, VIDEO
         },
-        text: text.trim()
+        text: text.trim(),
       });
     },
     videoReply: (lithiumEvent, text, videoUrl) => {
@@ -67,9 +67,9 @@ export const lithium = {
         type: "message",
         media: {
           url: videoUrl, // The fully-qualified, publicly-available reference to the media
-          mediaType: "VIDEO" // IMAGE, VIDEO
+          mediaType: "VIDEO", // IMAGE, VIDEO
         },
-        text: text.trim()
+        text: text.trim(),
       });
     },
     richImageReply: (
@@ -89,9 +89,9 @@ export const lithium = {
           url: linkUrl, // Required. A URL of a resource to which the end user will be redirected if they click the rich content/link.
           title: title, // Required. A title for the content at url.
           mediaUrl: imageUrl, // Required. A URL of a media resource like an image or video. Handling may be network-specific.
-          mimeType: mimeType // "image/jpeg" // Required. The MIME type of the resource at mediaUrl.
+          mimeType: mimeType, // "image/jpeg" // Required. The MIME type of the resource at mediaUrl.
         },
-        text: text.trim()
+        text: text.trim(),
       });
     },
     richVideoReply: (
@@ -111,9 +111,9 @@ export const lithium = {
           url: linkUrl, // Required. A URL of a resource to which the end user will be redirected if they click the rich content/link.
           title: title, // Required. A title for the content at url.
           mediaUrl: videoUrl, // Required. A URL of a media resource like an image or video. Handling may be network-specific.
-          mimeType: mimeType // "video/mp4" // Required. The MIME type of the resource at mediaUrl.
+          mimeType: mimeType, // "video/mp4" // Required. The MIME type of the resource at mediaUrl.
         },
-        text: text.trim()
+        text: text.trim(),
       });
     },
     /**
@@ -130,10 +130,10 @@ export const lithium = {
           coordinate: lithiumEvent.coordinate, // A Coordinate object. This is object contains details about the bot and the message in context. It is used by Khoros Care.
           author: lithiumEvent.author, // An Author object representing the message author on the social network channel.
           owner: {
-            type: "AGENT"
+            type: "AGENT",
           }, // The new owner (controller) of the conversation. - AGENT or BOT
-          comment: comment // Optional. Custom text that will be displayed in the response UI along with the handoff message.
-        }
+          comment: comment, // Optional. Custom text that will be displayed in the response UI along with the handoff message.
+        },
       };
     },
     /**
@@ -147,8 +147,8 @@ export const lithium = {
           type: "priority",
           coordinate: lithiumEvent.coordinate, // A Coordinate object. This is object contains details about the bot and the message in context. It is used by Khoros Care.
           author: lithiumEvent.author, // An Author object representing the message author on the social network channel.
-          newPriority: newPriority // An integer from 0 to 5 where 0 is the highest priority
-        }
+          newPriority: newPriority, // An integer from 0 to 5 where 0 is the highest priority
+        },
       };
     },
     /**
@@ -163,8 +163,8 @@ export const lithium = {
           coordinate: lithiumEvent.coordinate, // A Coordinate object. This is object contains details about the bot and the message in context. It is used by Khoros Care.
           author: lithiumEvent.author, // An Author object representing the message author on the social network channel.
           comment: comment, // An optional comment about this conversation resolution. Stored as an internal note visible in this case history in Khoros Care.
-          newWorkQueue: newWorkQueue // Required. The integer ID of the workqueue you wish to move the conversation to. Must be a valid Care workqueue ID.
-        }
+          newWorkQueue: parseInt(newWorkQueue), // Required. The integer ID of the workqueue you wish to move the conversation to. Must be a valid Care workqueue ID.
+        },
       };
       // The integer conversation display ID. If present, the ID must match an existing conversation. If absent, we will attempt to match an eligible case based on author and network.
       if (lithiumEvent.conversation && lithiumEvent.conversation.displayId) {
@@ -183,8 +183,8 @@ export const lithium = {
           type: "resolve",
           coordinate: lithiumEvent.coordinate, // A Coordinate object. This is object contains details about the bot and the message in context. It is used by Khoros Care.
           author: lithiumEvent.author, // An Author object representing the message author on the social network channel.
-          comment: comment // An optional comment about this conversation resolution. Stored as an internal note visible in this case history in Care.
-        }
+          comment: comment, // An optional comment about this conversation resolution. Stored as an internal note visible in this case history in Care.
+        },
       };
     },
     /**
@@ -198,8 +198,8 @@ export const lithium = {
           type: "note",
           coordinate: lithiumEvent.coordinate, // A Coordinate object. This is object contains details about the bot and the message in context. It is used by Khoros Care.
           author: lithiumEvent.author, // An Author object representing the message author on the social network channel.
-          note: noteText // The text of the note.
-        }
+          note: noteText, // The text of the note.
+        },
       };
     },
     /**
@@ -214,10 +214,10 @@ export const lithium = {
           entityType: "POST",
           coordinate: lithiumEvent.coordinate, // A Coordinate object. This is object contains details about the bot and the message in context. It is used by Khoros Care.
           author: lithiumEvent.author, // An Author object representing the message author on the social network channel.
-          tagIds: tagIds // An integer array of Care tag IDs.
-        }
+          tagIds: tagIds, // An integer array of Care tag IDs.
+        },
       };
-    }
+    },
   },
   appId: process.env.KHOROS_APP_ID,
   bot: {
@@ -231,7 +231,7 @@ export const lithium = {
       // you specify.Your endpoint might ignore it, but you must provide values.
       type: "BASIC_AUTH",
       identity: "teneo",
-      secret: "<super-secret-squirrel>"
+      secret: "<super-secret-squirrel>",
     },
     companyKey: process.env.KHOROS_COMPANY_KEY,
     networks: [
@@ -247,16 +247,16 @@ export const lithium = {
           accessTokenKey:
             process.env.KHOROS_NETWORK_TWITTER_AUTH_ACCESS_TOKEN_KEY, // TWITTER_ACCESS_TOKEN_KEY,
           acessTokenSecret:
-            process.env.KHOROS_NETWORK_TWITTER_AUTH_ACCESS_TOKEN_SECRET // TWITTER_ACCESS_TOKEN_SECRET
-        }
+            process.env.KHOROS_NETWORK_TWITTER_AUTH_ACCESS_TOKEN_SECRET, // TWITTER_ACCESS_TOKEN_SECRET
+        },
       },
       {
         key: "facebook",
         externalId: process.env.KHOROS_NETWORK_FACEBOOK_EXTERNAL_ID, //pageId of the Facebook page
-        includeTargeted: true
-      }
-    ]
-  }
+        includeTargeted: true,
+      },
+    ],
+  },
 };
 
 /**
@@ -269,7 +269,7 @@ export const limiterConfigPrivateTwitter = {
   reservoirRefreshAmount: 15,
   reservoirRefreshInterval: 15 * 60 * 1000, // must be divisible by 250
   maxConcurrent: 1,
-  minTime: 1000 // every 1 seconds for the queue backlog - stagger jobs for performance
+  minTime: 1000, // every 1 seconds for the queue backlog - stagger jobs for performance
 };
 
 /**
@@ -282,12 +282,12 @@ export const limiterConfigPublicTwitter = {
   reservoirRefreshAmount: 900,
   reservoirRefreshInterval: 15 * 60 * 1000, // must be divisible by 250
   maxConcurrent: 1,
-  minTime: 1000 // every 1 seconds for the queue backlog - stagger jobs for performance
+  minTime: 1000, // every 1 seconds for the queue backlog - stagger jobs for performance
 };
 
 export const limiterKhoros = {
   maxConcurrent: 1,
-  minTime: 500 // 2 per second - for the queue backlog - stagger jobs for performance
+  minTime: 500, // 2 per second - for the queue backlog - stagger jobs for performance
 };
 
 export const twitterConfig = {
@@ -296,5 +296,5 @@ export const twitterConfig = {
   access_token: lithium.bot.networks[0].auth.accessTokenKey,
   access_token_secret: lithium.bot.networks[0].auth.acessTokenSecret,
   timeout_ms: 60 * 1000, // optional HTTP request timeout to apply to all requests.
-  strictSSL: true // optional - requires SSL certificates to be valid.
+  strictSSL: true, // optional - requires SSL certificates to be valid.
 };
