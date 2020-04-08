@@ -339,8 +339,8 @@ const parseTasksFromTeneoResponse = (tasks) => {
       postsAnAnswer: true,
       shouldPostAnswer: true,
     },
-    { order: 50, name: "tags", postsAnAnswer: false, shouldPostAnswer: true },
-    { order: 60, name: "note", postsAnAnswer: false, shouldPostAnswer: true },
+    { order: 50, name: "tags", postsAnAnswer: false, shouldPostAnswer: false },
+    { order: 60, name: "note", postsAnAnswer: false, shouldPostAnswer: false },
     {
       order: 70,
       name: "priortiy",
