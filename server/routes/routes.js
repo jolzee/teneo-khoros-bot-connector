@@ -339,8 +339,18 @@ const parseTasksFromTeneoResponse = (tasks) => {
       postsAnAnswer: true,
       shouldPostAnswer: true,
     },
-    { order: 50, name: "tags", postsAnAnswer: false, shouldPostAnswer: false },
-    { order: 60, name: "note", postsAnAnswer: false, shouldPostAnswer: false },
+    {
+      order: 50,
+      name: "tags",
+      postsAnAnswer: false,
+      meta: true,
+    },
+    {
+      order: 60,
+      name: "note",
+      postsAnAnswer: false,
+      meta: true,
+    },
     {
       order: 70,
       name: "priortiy",
@@ -432,8 +442,9 @@ const handleTeneoResponse = async (lithiumEvent, teneoResponse) => {
 
       // let's adhere to the rules
       let tasksThatSendReplies = taskList.filter((task) => task.postsAnAnswer);
+
       let tasksForbiddingBotReply = taskList.filter(
-        (task) => !task.shouldPostAnswer
+        (task) => !task.shouldPostAnswer && !task.meta
       );
 
       // Find the first task that posts an answer. Ignore others if present
@@ -442,9 +453,7 @@ const handleTeneoResponse = async (lithiumEvent, teneoResponse) => {
       );
 
       // find meta tasks that don't actually send text response but should be associated a reply grouping
-      let metaTasks = taskList.filter(
-        (task) => !task.postsAnAnswer && task.shouldPostAnswer
-      );
+      let metaTasks = taskList.filter((task) => task.meta);
 
       // only send a simple text reply when we are allowed to -
       // ie.no existing rich responses or any tasks that explicity prohibit a response at all
@@ -467,6 +476,7 @@ const handleTeneoResponse = async (lithiumEvent, teneoResponse) => {
       }
       if (tasksForbiddingBotReply.length > 0) {
         taskList = tasksForbiddingBotReply; // ignore others so that we don't post when we shouldn't
+        taskList.concat(metaTasks);
       } else {
         taskList = [aTaskThatSendsReply].concat(metaTasks); // combine arrays
         taskList.sort(sortBy("order")); // important to get these in the correct order
