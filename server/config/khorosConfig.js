@@ -285,7 +285,7 @@ export const limiterConfigPublicTwitter = {
   minTime: 1000, // every 1 seconds for the queue backlog - stagger jobs for performance
 };
 
-export const limiterKhoros = {
+export const limiterKhorosLithium = {
   maxConcurrent: 1,
   minTime: 500, // 2 per second - for the queue backlog - stagger jobs for performance
 };

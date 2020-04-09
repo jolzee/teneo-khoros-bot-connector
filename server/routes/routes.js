@@ -17,13 +17,14 @@ import Twit from "twit";
 import {
   limiterConfigPrivateTwitter,
   limiterConfigPublicTwitter,
+  limiterKhorosLithium,
   lithium,
   twitterConfig,
 } from "../config/khorosConfig";
 import { isEmpty } from "../lib/utils";
 const limiterPublic = new Bottleneck(limiterConfigPublicTwitter); // To help with Twitter rate limits
 const limiterPrivate = new Bottleneck(limiterConfigPrivateTwitter); // To help with Twitter rate limits
-const limiterKhoros = new Bottleneck(limiterKhoros); // queue Khoros API requests // 2 per second
+const limiterKhoros = new Bottleneck(limiterKhorosLithium); // queue Khoros API requests // 2 per second
 const redis = new Redis({
   port: parseInt(process.env.REDIS_PORT), // Redis port
   host: process.env.REDIS_HOST, // Redis host
