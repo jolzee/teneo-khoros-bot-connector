@@ -477,7 +477,7 @@ const handleTeneoResponse = async (lithiumEvent, teneoResponse) => {
       }
       if (tasksForbiddingBotReply.length > 0) {
         taskList = tasksForbiddingBotReply; // ignore others so that we don't post when we shouldn't
-        taskList.concat(metaTasks);
+        taskList = taskList.concat(metaTasks);
       } else {
         taskList = [aTaskThatSendsReply].concat(metaTasks); // combine arrays
         taskList.sort(sortBy("order")); // important to get these in the correct order
