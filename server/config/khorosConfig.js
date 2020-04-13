@@ -53,10 +53,12 @@ export const lithium = {
         coordinate: lithiumEvent.coordinate, //the bot simply passes the coordinate back
         author: lithiumEvent.author, //the bot simply passes the author back
         type: "message",
-        media: {
-          url: imageUrl, // The fully-qualified, publicly-available reference to the media
-          mediaType: "IMAGE", // IMAGE, VIDEO
-        },
+        media: [
+          {
+            url: imageUrl, // The fully-qualified, publicly-available reference to the media
+            mediaType: "IMAGE", // IMAGE, VIDEO
+          },
+        ],
         text: text.trim(),
       });
     },
@@ -65,10 +67,12 @@ export const lithium = {
         coordinate: lithiumEvent.coordinate, //the bot simply passes the coordinate back
         author: lithiumEvent.author, //the bot simply passes the author back
         type: "message",
-        media: {
-          url: videoUrl, // The fully-qualified, publicly-available reference to the media
-          mediaType: "VIDEO", // IMAGE, VIDEO
-        },
+        media: [
+          {
+            url: videoUrl, // The fully-qualified, publicly-available reference to the media
+            mediaType: "VIDEO", // IMAGE, VIDEO
+          },
+        ],
         text: text.trim(),
       });
     },
